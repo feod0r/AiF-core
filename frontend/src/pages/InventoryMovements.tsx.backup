@@ -1,0 +1,1666 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Space,
+  Popconfirm,
+  message,
+  Card,
+  Typography,
+  Tooltip,
+  Select,
+  InputNumber,
+  Tag,
+  DatePicker,
+  List,
+  Drawer,
+} from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, PlayCircleOutlined, SwapOutlined } from '@ant-design/icons';
+import { 
+  inventoryMovementsApi, 
+  itemsApi, 
+  warehousesApi, 
+  machinesApi,
+  ownersApi,
+  counterpartiesApi,
+  accountsApi
+} from '../services/api';
+import { 
+  InventoryMovement, 
+  Item, 
+  Warehouse, 
+  Machine, 
+  Owner, 
+  Counterparty, 
+  Account,
+  BulkOperationResult,
+  BulkMovementApproval,
+  BulkMovementExecution
+} from '../types';
+import dayjs from 'dayjs';
+
+const { Title } = Typography;
+const { Option } = Select;
+const { TextArea } = Input;
+
+const InventoryMovements: React.FC = () => {
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [owners, setOwners] = useState<Owner[]>([]);
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingMovement, setEditingMovement] = useState<InventoryMovement | null>(null);
+  const [movementItems, setMovementItems] = useState<any[]>([]);
+  const [selectedMovementType, setSelectedMovementType] = useState<string>('');
+  const [forceUpdate, setForceUpdate] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+  const [detailDrawerVisible, setDetailDrawerVisible] = useState(false);
+  const [selectedMovement, setSelectedMovement] = useState<InventoryMovement | null>(null);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 100,
+    total: 0,
+  });
+  const [form] = Form.useForm();
+
+  // Состояния для массовых операций
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Определяем мобильное устройство
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Новая логика отображения полей на основе типа операции
+  const shouldShowFromWarehouse = () => {
+    return ['transfer', 'load_machine', 'issue', 'sale'].includes(selectedMovementType);
+  };
+
+  const shouldShowToWarehouse = () => {
+    if (selectedMovementType === 'receipt') {
+      // Для поступления показываем склад назначения только если не выбран автомат
+      const selectedToMachine = form.getFieldValue('to_machine_id');
+      return !selectedToMachine;
+    }
+    return ['transfer', 'unload_machine', 'adjustment'].includes(selectedMovementType);
+  };
+
+  const shouldShowFromMachine = () => {
+    return ['transfer', 'unload_machine', 'issue', 'sale'].includes(selectedMovementType);
+  };
+
+  const shouldShowToMachine = () => {
+    if (selectedMovementType === 'receipt') {
+      // Для поступления показываем автомат назначения только если не выбран склад
+      const selectedToWarehouse = form.getFieldValue('to_warehouse_id');
+      return !selectedToWarehouse;
+    }
+    return ['transfer', 'load_machine', 'adjustment'].includes(selectedMovementType);
+  };
+
+  const shouldShowCounterparty = () => {
+    return ['receipt', 'sale', 'load_machine'].includes(selectedMovementType);
+  };
+
+  // onChange для полей - только взаимоисключающие в рамках transfer
+  const handleFromWarehouseChange = (value: number | undefined) => {
+    form.setFieldsValue({ from_warehouse_id: value });
+    
+    if (selectedMovementType === 'transfer') {
+      // Для transfer очищаем альтернативное поле отправления
+      form.setFieldsValue({ from_machine_id: undefined });
+    } else if (selectedMovementType === 'load_machine' && value) {
+      // Для загрузки автомата, если выбран склад отправления, то контрагент не нужен
+      form.setFieldsValue({ counterparty_id: undefined });
+    }
+  };
+  
+  const handleFromMachineChange = (value: number | undefined) => {
+    form.setFieldsValue({ from_machine_id: value });
+    
+    if (selectedMovementType === 'transfer') {
+      // Для transfer очищаем альтернативное поле отправления
+      form.setFieldsValue({ from_warehouse_id: undefined });
+    }
+  };
+  
+  const handleToWarehouseChange = (value: number | undefined) => {
+    form.setFieldsValue({ to_warehouse_id: value });
+    
+    if (selectedMovementType === 'transfer') {
+      // Для transfer очищаем альтернативное поле назначения
+      form.setFieldsValue({ to_machine_id: undefined });
+    } else if (selectedMovementType === 'receipt' && value) {
+      // Для поступления, если выбран склад назначения, очищаем автомат назначения
+      form.setFieldsValue({ to_machine_id: undefined });
+    }
+    
+    // Принудительное обновление для пересчета видимости полей
+    setForceUpdate(prev => prev + 1);
+  };
+  
+  const handleToMachineChange = (value: number | undefined) => {
+    form.setFieldsValue({ to_machine_id: value });
+    
+    if (selectedMovementType === 'transfer') {
+      // Для transfer очищаем альтернативное поле назначения
+      form.setFieldsValue({ to_warehouse_id: undefined });
+    } else if (selectedMovementType === 'receipt' && value) {
+      // Для поступления, если выбран автомат назначения, очищаем склад назначения
+      form.setFieldsValue({ to_warehouse_id: undefined });
+    }
+    
+    // Принудительное обновление для пересчета видимости полей
+    setForceUpdate(prev => prev + 1);
+  };
+
+  // Функции для работы со статусами
+  const getStatusColor = (status: any) => {
+    if (!status) return 'default';
+    const statusName = status.name || 'Неизвестно';
+    switch (statusName.toLowerCase()) {
+      case 'draft':
+      case 'черновик':
+        return 'orange';
+      case 'approved':
+      case 'утвержден':
+        return 'blue';
+      case 'executed':
+      case 'выполнен':
+        return 'green';
+      case 'cancelled':
+      case 'отменен':
+        return 'red';
+      default:
+        return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: any) => {
+    if (!status) return 'Неизвестно';
+    const statusName = status.name || 'Неизвестно';
+    switch (statusName.toLowerCase()) {
+      case 'draft':
+        return 'Черновик';
+      case 'approved':
+        return 'Утвержден';
+      case 'executed':
+        return 'Выполнен';
+      case 'cancelled':
+        return 'Отменен';
+      default:
+        return statusName;
+    }
+  };
+
+  const canApprove = (movement: InventoryMovement) => {
+    const statusName = movement.status?.name?.toLowerCase();
+    return statusName === 'draft' || statusName === 'черновик';
+  };
+
+  const canExecute = (movement: InventoryMovement) => {
+    const statusName = movement.status?.name?.toLowerCase();
+    return statusName === 'approved' || statusName === 'утвержден';
+  };
+
+  const canCancel = (movement: InventoryMovement) => {
+    const statusName = movement.status?.name?.toLowerCase();
+    return statusName === 'draft' || statusName === 'черновик' || statusName === 'approved' || statusName === 'утвержден';
+  };
+
+  const fetchMovements = async (page = 1, pageSize = 100) => {
+    setLoading(true);
+    try {
+      // Бэкенд использует skip/limit, а не page/limit
+      const skip = (page - 1) * pageSize;
+      
+      // Получаем данные и общее количество параллельно
+      const [data, total] = await Promise.all([
+        inventoryMovementsApi.getList({ skip, limit: pageSize }),
+        inventoryMovementsApi.getCount()
+      ]);
+      
+      setMovements(data);
+      setPagination({
+        current: page,
+        pageSize,
+        total,
+      });
+    } catch (error) {
+      message.error('Ошибка при загрузке движений');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchData = async () => {
+    try {
+      const [itemsData, warehousesData, machinesData, ownersData, counterpartiesData, accountsData] = await Promise.all([
+        itemsApi.getList(),
+        warehousesApi.getList(),
+        machinesApi.getList(),
+        ownersApi.getList(),
+        counterpartiesApi.getList(),
+        accountsApi.getList(),
+      ]);
+      
+      setItems(itemsData);
+      setWarehouses(warehousesData);
+      setMachines(machinesData.data || machinesData);
+      setOwners(ownersData.data || ownersData);
+      setCounterparties(counterpartiesData);
+      setAccounts(accountsData);
+    } catch (error) {
+      message.error('Ошибка при загрузке данных');
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    fetchMovements();
+  }, []);
+
+  const handleCreate = () => {
+    setEditingMovement(null);
+    setMovementItems([]);
+    setSelectedMovementType('');
+    setModalVisible(true);
+    form.resetFields();
+    form.setFieldsValue({
+      document_date: dayjs(),
+      status_id: 1, // Черновик
+      currency: 'RUB',
+    });
+  };
+
+  const handleEdit = (record: InventoryMovement) => {
+    setEditingMovement(record);
+    // Нормализуем позиции для формы (нужен item_id, а не вложенный item)
+    const normalizedItems = (record.items || []).map((it: any, idx: number) => ({
+      id: it.id ?? idx,
+      item_id: it.item_id ?? it.item?.id,
+      quantity: typeof it.quantity === 'string' ? parseFloat(it.quantity) : it.quantity,
+      price: typeof it.price === 'string' ? parseFloat(it.price) : it.price,
+      amount: typeof it.amount === 'string' ? parseFloat(it.amount) : it.amount,
+      description: it.description || '',
+    }));
+    setMovementItems(normalizedItems);
+
+    // Устанавливаем тип движения для логики видимости
+    setSelectedMovementType(record.movement_type || '');
+    setModalVisible(true);
+
+    // Фоллбеки ID из вложенных объектов
+    const warehouse_id = (record as any).warehouse_id ?? (record as any).warehouse?.id;
+    const machine_id = (record as any).machine_id ?? (record as any).machine?.id;
+    const from_warehouse_id = (record as any).from_warehouse_id ?? (record as any).from_warehouse?.id;
+    const to_warehouse_id = (record as any).to_warehouse_id ?? (record as any).to_warehouse?.id;
+    const from_machine_id = (record as any).from_machine_id ?? (record as any).from_machine?.id;
+    const to_machine_id = (record as any).to_machine_id ?? (record as any).to_machine?.id;
+    const counterparty_id = (record as any).counterparty_id ?? (record as any).counterparty?.id;
+
+    // Статус: берем status_id либо из status.id
+    const status_id = (record as any).status_id ?? (record as any).status?.id;
+
+    form.setFieldsValue({
+      movement_type: record.movement_type,
+      document_date: record.document_date ? dayjs(record.document_date) : dayjs(),
+      status_id,
+      warehouse_id,
+      from_warehouse_id,
+      to_warehouse_id,
+      machine_id,
+      from_machine_id,
+      to_machine_id,
+      counterparty_id,
+      currency: record.currency || 'RUB',
+      description: record.description,
+    });
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await inventoryMovementsApi.delete(id);
+      message.success('Движение удалено');
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при удалении движения');
+    }
+  };
+
+  const handleApprove = async (movement: InventoryMovement) => {
+    try {
+      const userRaw = localStorage.getItem('user');
+      const currentUser = userRaw ? JSON.parse(userRaw) : null;
+      const approvedBy = currentUser?.id;
+      if (!approvedBy) {
+        message.error('Не удалось определить пользователя для утверждения');
+        return;
+      }
+      await inventoryMovementsApi.approve(movement.id, { approved_by: approvedBy });
+      message.success('Движение утверждено');
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при утверждении движения');
+    }
+  };
+
+  const handleExecute = async (movement: InventoryMovement) => {
+    try {
+      const userRaw = localStorage.getItem('user');
+      const currentUser = userRaw ? JSON.parse(userRaw) : null;
+      const executedBy = currentUser?.id;
+      if (!executedBy) {
+        message.error('Не удалось определить пользователя для выполнения');
+        return;
+      }
+      await inventoryMovementsApi.execute(movement.id, { executed_by: executedBy });
+      message.success('Движение выполнено');
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при выполнении движения');
+    }
+  };
+
+  const handleCancel = async (movement: InventoryMovement) => {
+    try {
+      // Здесь должна быть логика отмены движения
+      message.success('Движение отменено');
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при отмене движения');
+    }
+  };
+
+  // Функции для массовых операций
+  const handleBulkApprove = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Выберите движения для утверждения');
+      return;
+    }
+
+    try {
+      setBulkLoading(true);
+      const result = await inventoryMovementsApi.bulkApprove({
+        approved_by: 1, // TODO: Получить ID текущего пользователя
+        movement_ids: selectedRowKeys.map(key => Number(key))
+      });
+
+      if (result.success_count > 0) {
+        message.success(`Успешно утверждено ${result.success_count} движений`);
+      }
+      if (result.error_count > 0) {
+        message.warning(`Ошибок: ${result.error_count}`);
+      }
+
+      setSelectedRowKeys([]);
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при массовом утверждении');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkExecute = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Выберите движения для выполнения');
+      return;
+    }
+
+    try {
+      setBulkLoading(true);
+      const result = await inventoryMovementsApi.bulkExecute({
+        executed_by: 1, // TODO: Получить ID текущего пользователя
+        movement_ids: selectedRowKeys.map(key => Number(key))
+      });
+
+      if (result.success_count > 0) {
+        message.success(`Успешно выполнено ${result.success_count} движений`);
+      }
+      if (result.error_count > 0) {
+        message.warning(`Ошибок: ${result.error_count}`);
+      }
+
+      setSelectedRowKeys([]);
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при массовом выполнении');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const onSelectChange = (newSelectedRowKeys: React.Key[]) => {
+    setSelectedRowKeys(newSelectedRowKeys);
+  };
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: onSelectChange,
+  };
+
+  const addMovementItem = () => {
+    const newItem = {
+      id: Date.now(),
+      item_id: undefined,
+      quantity: 0,
+      price: 0,
+      amount: 0,
+      description: '',
+    };
+    setMovementItems([...movementItems, newItem]);
+  };
+
+  const removeMovementItem = (index: number) => {
+    const newItems = movementItems.filter((_, i) => i !== index);
+    setMovementItems(newItems);
+  };
+
+  const updateMovementItem = (index: number, field: string, value: any) => {
+    const newItems = [...movementItems];
+    newItems[index] = { ...newItems[index], [field]: value };
+    
+    // Автоматически рассчитываем сумму
+    if (field === 'quantity' || field === 'price') {
+      const quantity = field === 'quantity' ? value : newItems[index].quantity;
+      const price = field === 'price' ? value : newItems[index].price;
+      newItems[index].amount = (quantity || 0) * (price || 0);
+    }
+    
+    setMovementItems(newItems);
+  };
+
+  const handleMovementTypeChange = (value: string) => {
+    setSelectedMovementType(value);
+    
+    // Очищаем поля при смене типа движения
+    form.setFieldsValue({
+      from_warehouse_id: undefined,
+      to_warehouse_id: undefined,
+      from_machine_id: undefined,
+      to_machine_id: undefined,
+      counterparty_id: undefined,
+    });
+  };
+
+  const handleSubmit = async (values: any) => {
+    if (movementItems.length === 0) {
+      message.error('Добавьте хотя бы один товар');
+      return;
+    }
+
+    // Проверяем, что все товары выбраны
+    const invalidItems = movementItems.filter(item => !item.item_id || !item.quantity || !item.price);
+    if (invalidItems.length > 0) {
+      message.error('Заполните все обязательные поля для товаров');
+      return;
+    }
+
+    // Новая бизнес-валидация на основе заполненных полей
+    const type = values.movement_type;
+    const hasFromWarehouse = !!values.from_warehouse_id;
+    const hasToWarehouse = !!values.to_warehouse_id;
+    const hasFromMachine = !!values.from_machine_id;
+    const hasToMachine = !!values.to_machine_id;
+    const hasCounterparty = !!values.counterparty_id;
+    
+    const hasFrom = hasFromWarehouse || hasFromMachine;
+    const hasTo = hasToWarehouse || hasToMachine;
+
+    if (type === 'receipt') {
+      if (!hasTo) {
+        message.error('Для прихода укажите место назначения');
+        return;
+      }
+      if (!hasCounterparty) {
+        message.error('Для прихода укажите контрагента (поставщика)');
+        return;
+      }
+    }
+    
+    if (['issue', 'sale'].includes(type)) {
+      if (!hasFrom) {
+        message.error('Для расхода/продажи укажите место отправления');
+        return;
+      }
+      if (type === 'sale' && !hasCounterparty) {
+        message.error('Для продажи укажите контрагента (покупателя)');
+        return;
+      }
+    }
+    
+    if (type === 'transfer') {
+      if (!hasFrom || !hasTo) {
+        message.error('Для перемещения укажите места отправления и назначения');
+        return;
+      }
+    }
+    
+    if (type === 'load_machine') {
+      if (!hasToMachine) {
+        message.error('Для загрузки автомата укажите автомат назначения');
+        return;
+      }
+    }
+    
+    if (type === 'unload_machine') {
+      if (!hasFromMachine) {
+        message.error('Для выгрузки автомата укажите автомат отправления');
+        return;
+      }
+    }
+    
+    if (type === 'adjustment') {
+      if (!hasFrom && !hasTo) {
+        message.error('Для корректировки укажите место (склад или автомат)');
+        return;
+      }
+    }
+
+    try {
+      const totalAmount = movementItems.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      
+      const movementData = {
+        ...values,
+        document_date: values.document_date.toISOString(),
+        total_amount: totalAmount,
+        items: movementItems.map(item => ({
+          item_id: item.item_id,
+          quantity: item.quantity,
+          price: item.price,
+          amount: item.amount,
+          description: item.description,
+        })),
+      };
+
+      if (editingMovement) {
+        await inventoryMovementsApi.update(editingMovement.id, movementData);
+        message.success('Движение обновлено');
+      } else {
+        await inventoryMovementsApi.create(movementData);
+        message.success('Движение создано');
+      }
+
+      setModalVisible(false);
+      setMovementItems([]);
+      setEditingMovement(null);
+      setSelectedMovementType('');
+      fetchMovements();
+    } catch (error) {
+      message.error('Ошибка при сохранении движения');
+    }
+  };
+
+  const handleTableChange = (pagination: any) => {
+    fetchMovements(pagination.current, pagination.pageSize);
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'receipt': return 'green';
+      case 'issue': return 'red';
+      case 'transfer': return 'blue';
+      case 'sale': return 'orange';
+      case 'adjustment': return 'purple';
+      case 'load_machine': return 'cyan';
+      case 'unload_machine': return 'magenta';
+      default: return 'default';
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case 'receipt': return 'Поступление';
+      case 'issue': return 'Выдача';
+      case 'transfer': return 'Перемещение';
+      case 'sale': return 'Продажа';
+      case 'adjustment': return 'Корректировка';
+      case 'load_machine': return 'Загрузка автомата';
+      case 'unload_machine': return 'Выгрузка автомата';
+      default: return type;
+    }
+  };
+
+  const columns = [
+    {
+      title: 'Дата',
+      dataIndex: 'document_date',
+      key: 'document_date',
+      render: (date: string) => dayjs(date).format('DD.MM.YYYY HH:mm'),
+    },
+    {
+      title: 'Тип',
+      dataIndex: 'movement_type',
+      key: 'movement_type',
+      render: (type: string) => (
+        <Tag color={getTypeColor(type)}>
+          {getTypeLabel(type)}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Статус',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: any) => (
+        <Tag color={getStatusColor(status)}>
+          {getStatusLabel(status)}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Товары',
+      key: 'items',
+      render: (_: any, record: InventoryMovement) => {
+        if (!record.items || record.items.length === 0) return 'Нет товаров';
+        return record.items.map((item: any, index: number) => (
+          <div key={index}>
+            {item.item?.name || 'Неизвестно'} - {item.quantity} {item.item?.unit || 'шт'}
+          </div>
+        ));
+      },
+    },
+    {
+      title: 'Сумма',
+      dataIndex: 'total_amount',
+      key: 'total_amount',
+      render: (amount: number, record: InventoryMovement) => {
+        if (!amount) return '-';
+        const currency = record.currency || 'RUB';
+        return `${amount} ${currency}`;
+      },
+    },
+    {
+      title: 'Откуда',
+      key: 'from',
+      render: (_: any, record: InventoryMovement) => {
+        if (record.fromWarehouse) return `Склад: ${record.fromWarehouse.name}`;
+        if (record.fromMachine) return `Автомат: ${record.fromMachine.name}`;
+        if (record.counterparty && ['receipt', 'load_machine'].includes(record.movement_type)) {
+          return `Поставщик: ${record.counterparty.name}`;
+        }
+        return '-';
+      },
+    },
+    {
+      title: 'Куда',
+      key: 'to',
+      render: (_: any, record: InventoryMovement) => {
+        if (record.toWarehouse) return `Склад: ${record.toWarehouse.name}`;
+        if (record.toMachine) return `Автомат: ${record.toMachine.name}`;
+        if (record.counterparty && ['sale', 'unload_machine'].includes(record.movement_type)) {
+          return `Покупатель: ${record.counterparty.name}`;
+        }
+        return '-';
+      },
+    },
+    {
+      title: 'Контрагент',
+      key: 'counterparty',
+      render: (_: any, record: InventoryMovement) => {
+        return record.counterparty?.name || '-';
+      },
+    },
+    {
+      title: 'Создал',
+      key: 'created_by',
+      render: (_: any, record: InventoryMovement) => {
+        return record.created_by_user?.full_name || record.created_by_user?.username || '-';
+      },
+    },
+    {
+      title: 'Действия',
+      key: 'actions',
+      width: 200,
+      render: (_: any, record: InventoryMovement) => (
+        <Space>
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+            disabled={!canCancel(record)}
+          />
+          
+          {canApprove(record) && (
+            <Tooltip title="Утвердить">
+              <Button
+                type="link"
+                icon={<CheckOutlined />}
+                onClick={() => handleApprove(record)}
+                style={{ color: '#1890ff' }}
+              />
+            </Tooltip>
+          )}
+          
+          {canExecute(record) && (
+            <Tooltip title="Выполнить">
+              <Button
+                type="link"
+                icon={<PlayCircleOutlined />}
+                onClick={() => handleExecute(record)}
+                style={{ color: '#52c41a' }}
+              />
+            </Tooltip>
+          )}
+          
+          {canCancel(record) && (
+            <Tooltip title="Отменить">
+              <Button
+                type="link"
+                icon={<CloseOutlined />}
+                onClick={() => handleCancel(record)}
+                style={{ color: '#ff4d4f' }}
+              />
+            </Tooltip>
+          )}
+          
+          <Popconfirm
+            title="Вы уверены, что хотите удалить это движение?"
+            onConfirm={() => handleDelete(record.id)}
+            okText="Да"
+            cancelText="Нет"
+          >
+            <Button
+              type="link"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={!canCancel(record)}
+            />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ padding: isMobile ? '16px' : '24px' }}>
+      <div style={{ 
+        marginBottom: 24, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexDirection: isMobile ? 'column' : 'row',
+        gap: isMobile ? 12 : 0
+      }}>
+        <Title level={isMobile ? 3 : 2} style={{ 
+          margin: 0,
+          fontSize: isMobile ? 18 : undefined,
+          lineHeight: isMobile ? 1.4 : undefined
+        }}>
+          <SwapOutlined /> Движения товаров
+        </Title>
+        <div style={{ 
+          display: 'flex', 
+          gap: 8, 
+          flexDirection: isMobile ? 'column' : 'row',
+          width: isMobile ? '100%' : 'auto'
+        }}>
+          {selectedRowKeys.length > 0 && (
+            <>
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                onClick={handleBulkApprove}
+                loading={bulkLoading}
+                size={isMobile ? 'small' : 'middle'}
+                style={{ backgroundColor: '#1890ff' }}
+              >
+                {isMobile ? `Утвердить (${selectedRowKeys.length})` : `Утвердить ${selectedRowKeys.length}`}
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                onClick={handleBulkExecute}
+                loading={bulkLoading}
+                size={isMobile ? 'small' : 'middle'}
+                style={{ backgroundColor: '#52c41a' }}
+              >
+                {isMobile ? `Выполнить (${selectedRowKeys.length})` : `Выполнить ${selectedRowKeys.length}`}
+              </Button>
+            </>
+          )}
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleCreate}
+            size={isMobile ? 'small' : 'middle'}
+          >
+            {isMobile ? 'Создать' : 'Создать движение'}
+          </Button>
+        </div>
+      </div>
+
+      <Card size={isMobile ? 'small' : 'default'}>
+
+        {isMobile ? (
+          // Мобильная версия - список
+          <List
+            dataSource={movements}
+            loading={loading}
+            renderItem={(movement: InventoryMovement) => (
+              <List.Item
+                style={{ 
+                  padding: '16px 0',
+                  borderBottom: '1px solid #f0f0f0'
+                }}
+              >
+                <div style={{ width: '100%' }}>
+                  {/* Заголовок с типом движения */}
+                  <div style={{ 
+                    marginBottom: 12,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    setSelectedMovement(movement);
+                    setDetailDrawerVisible(true);
+                  }}
+                  >
+                    <span 
+                      style={{ 
+                        fontSize: 18,
+                        color: '#1890ff',
+                        fontWeight: 'bold',
+                        display: 'block',
+                        width: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {getTypeLabel(movement.movement_type)}
+                    </span>
+                  </div>
+
+                  {/* Основная информация */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Дата:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {dayjs(movement.document_date).format('DD.MM.YYYY HH:mm')}
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Статус:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        <Tag color={getStatusColor(movement.status)}>
+                          {getStatusLabel(movement.status)}
+                        </Tag>
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Товары:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {movement.items && movement.items.length > 0 
+                          ? movement.items.map((item: any, index: number) => (
+                              <div key={index} style={{ marginTop: 4 }}>
+                                {item.item?.name || 'Неизвестно'} - {item.quantity} {item.item?.unit || 'шт'}
+                              </div>
+                            ))
+                          : 'Нет товаров'
+                        }
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Сумма:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {movement.total_amount 
+                          ? `${movement.total_amount} ${movement.currency || 'RUB'}`
+                          : '-'
+                        }
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Откуда:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {movement.fromWarehouse ? `Склад: ${movement.fromWarehouse.name}` :
+                         movement.fromMachine ? `Автомат: ${movement.fromMachine.name}` :
+                         movement.counterparty && ['receipt', 'load_machine'].includes(movement.movement_type) 
+                           ? `Поставщик: ${movement.counterparty.name}` : '-'}
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Куда:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {movement.toWarehouse ? `Склад: ${movement.toWarehouse.name}` :
+                         movement.toMachine ? `Автомат: ${movement.toMachine.name}` :
+                         movement.counterparty && ['sale', 'unload_machine'].includes(movement.movement_type) 
+                           ? `Покупатель: ${movement.counterparty.name}` : '-'}
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Контрагент:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {movement.counterparty?.name || '-'}
+                      </span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 'bold', color: '#666' }}>
+                        Создал:
+                      </span>
+                      <span style={{ fontSize: 14, marginLeft: 8 }}>
+                        {movement.created_by_user?.full_name || movement.created_by_user?.username || '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Кнопки действий внизу элемента */}
+                <div style={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  justifyContent: 'flex-end',
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: '1px solid #f0f0f0'
+                }}>
+                  <Button 
+                    type="text" 
+                    icon={<EditOutlined />} 
+                    size="small"
+                    style={{ 
+                      fontSize: '12px',
+                      padding: '4px 8px',
+                      minWidth: 'auto',
+                      height: '32px'
+                    }}
+                    onClick={() => handleEdit(movement)}
+                    disabled={!canCancel(movement)}
+                  >
+                    Изменить
+                  </Button>
+                  
+                  {canApprove(movement) && (
+                    <Button
+                      type="text"
+                      icon={<CheckOutlined />}
+                      size="small"
+                      style={{ 
+                        fontSize: '12px',
+                        padding: '4px 8px',
+                        minWidth: 'auto',
+                        height: '32px',
+                        color: '#1890ff'
+                      }}
+                      onClick={() => handleApprove(movement)}
+                    >
+                      Утвердить
+                    </Button>
+                  )}
+                  
+                  {canExecute(movement) && (
+                    <Button
+                      type="text"
+                      icon={<PlayCircleOutlined />}
+                      size="small"
+                      style={{ 
+                        fontSize: '12px',
+                        padding: '4px 8px',
+                        minWidth: 'auto',
+                        height: '32px',
+                        color: '#52c41a'
+                      }}
+                      onClick={() => handleExecute(movement)}
+                    >
+                      Выполнить
+                    </Button>
+                  )}
+                  
+                  {canCancel(movement) && (
+                    <Button
+                      type="text"
+                      icon={<CloseOutlined />}
+                      size="small"
+                      style={{ 
+                        fontSize: '12px',
+                        padding: '4px 8px',
+                        minWidth: 'auto',
+                        height: '32px',
+                        color: '#ff4d4f'
+                      }}
+                      onClick={() => handleCancel(movement)}
+                    >
+                      Отменить
+                    </Button>
+                  )}
+                  
+                  <Popconfirm
+                    title="Вы уверены, что хотите удалить это движение?"
+                    onConfirm={() => handleDelete(movement.id)}
+                    okText="Да"
+                    cancelText="Нет"
+                  >
+                    <Button 
+                      type="text" 
+                      danger 
+                      icon={<DeleteOutlined />}
+                      size="small"
+                      style={{ 
+                        fontSize: '12px',
+                        padding: '4px 8px',
+                        minWidth: 'auto',
+                        height: '32px'
+                      }}
+                      disabled={!canCancel(movement)}
+                    >
+                      Удалить
+                    </Button>
+                  </Popconfirm>
+                </div>
+              </List.Item>
+            )}
+          />
+        ) : (
+          // Десктопная версия - таблица
+          <Table
+            columns={columns}
+            dataSource={movements}
+            rowKey="id"
+            loading={loading}
+            rowSelection={rowSelection}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: pagination.total,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              pageSizeOptions: ['100', '200', '500', '800', '1000'],
+              showTotal: (total, range) => `${range[0]}-${range[1]} из ${total} записей`,
+            }}
+            onChange={handleTableChange}
+          />
+        )}
+
+        {/* Drawer для детального просмотра на мобильных */}
+        <Drawer
+          title={
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 8,
+              minHeight: 'auto',
+              padding: '8px 0'
+            }}>
+              <div style={{ 
+                flex: 1,
+                minWidth: 0,
+                overflow: 'hidden'
+              }}>
+                <div style={{ 
+                  fontSize: 16, 
+                  fontWeight: 'bold',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {selectedMovement ? getTypeLabel(selectedMovement.movement_type) : 'Движение товаров'}
+                </div>
+                <div style={{ 
+                  fontSize: 12, 
+                  color: '#999',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  Движения товаров
+                </div>
+              </div>
+            </div>
+          }
+          placement="right"
+          onClose={() => setDetailDrawerVisible(false)}
+          open={detailDrawerVisible}
+          width="100%"
+          styles={{
+            header: { 
+              padding: '12px 16px',
+              minHeight: 'auto',
+              borderBottom: '1px solid #f0f0f0'
+            },
+            body: { 
+              padding: '16px',
+              paddingBottom: '80px'
+            }
+          }}
+        >
+          {selectedMovement && (
+            <div>
+              {/* Основная информация */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ marginBottom: 16 }}>
+                  <span style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, display: 'block' }}>
+                    Основная информация:
+                  </span>
+                  <div style={{ fontSize: 14, color: '#666' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      📅 Дата: {dayjs(selectedMovement.document_date).format('DD.MM.YYYY HH:mm')}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      🏷️ Тип: <Tag color={getTypeColor(selectedMovement.movement_type)}>
+                        {getTypeLabel(selectedMovement.movement_type)}
+                      </Tag>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      📊 Статус: <Tag color={getStatusColor(selectedMovement.status)}>
+                        {getStatusLabel(selectedMovement.status)}
+                      </Tag>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      💰 Сумма: {selectedMovement.total_amount 
+                        ? `${selectedMovement.total_amount} ${selectedMovement.currency || 'RUB'}`
+                        : '-'
+                      }
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      📦 Товары: {selectedMovement.items && selectedMovement.items.length > 0 
+                        ? selectedMovement.items.map((item: any, index: number) => (
+                            <div key={index} style={{ marginTop: 4 }}>
+                              {item.item?.name || 'Неизвестно'} - {item.quantity} {item.item?.unit || 'шт'}
+                            </div>
+                          ))
+                        : 'Нет товаров'
+                      }
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      📤 Откуда: {selectedMovement.fromWarehouse ? `Склад: ${selectedMovement.fromWarehouse.name}` :
+                       selectedMovement.fromMachine ? `Автомат: ${selectedMovement.fromMachine.name}` :
+                       selectedMovement.counterparty && ['receipt', 'load_machine'].includes(selectedMovement.movement_type) 
+                         ? `Поставщик: ${selectedMovement.counterparty.name}` : '-'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      📥 Куда: {selectedMovement.toWarehouse ? `Склад: ${selectedMovement.toWarehouse.name}` :
+                       selectedMovement.toMachine ? `Автомат: ${selectedMovement.toMachine.name}` :
+                       selectedMovement.counterparty && ['sale', 'unload_machine'].includes(selectedMovement.movement_type) 
+                         ? `Покупатель: ${selectedMovement.counterparty.name}` : '-'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      👤 Контрагент: {selectedMovement.counterparty?.name || '-'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      👨‍💼 Создал: {selectedMovement.created_by_user?.full_name || selectedMovement.created_by_user?.username || '-'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Действия */}
+              <div style={{ 
+                position: 'fixed', 
+                bottom: 0, 
+                left: 0, 
+                right: 0, 
+                background: 'white', 
+                padding: '12px 16px',
+                borderTop: '1px solid #f0f0f0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                zIndex: 1000,
+                boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.1)'
+              }}>
+                <Button 
+                  icon={<EditOutlined />} 
+                  style={{ 
+                    width: '100%',
+                    height: '44px',
+                    fontSize: '16px'
+                  }}
+                  onClick={() => {
+                    setDetailDrawerVisible(false);
+                    handleEdit(selectedMovement);
+                  }}
+                  disabled={!canCancel(selectedMovement)}
+                >
+                  Изменить
+                </Button>
+                
+                {canApprove(selectedMovement) && (
+                  <Button
+                    icon={<CheckOutlined />}
+                    style={{ 
+                      width: '100%',
+                      height: '44px',
+                      fontSize: '16px',
+                      color: '#1890ff'
+                    }}
+                    onClick={() => {
+                      setDetailDrawerVisible(false);
+                      handleApprove(selectedMovement);
+                    }}
+                  >
+                    Утвердить
+                  </Button>
+                )}
+                
+                {canExecute(selectedMovement) && (
+                  <Button
+                    icon={<PlayCircleOutlined />}
+                    style={{ 
+                      width: '100%',
+                      height: '44px',
+                      fontSize: '16px',
+                      color: '#52c41a'
+                    }}
+                    onClick={() => {
+                      setDetailDrawerVisible(false);
+                      handleExecute(selectedMovement);
+                    }}
+                  >
+                    Выполнить
+                  </Button>
+                )}
+                
+                {canCancel(selectedMovement) && (
+                  <Button
+                    icon={<CloseOutlined />}
+                    style={{ 
+                      width: '100%',
+                      height: '44px',
+                      fontSize: '16px',
+                      color: '#ff4d4f'
+                    }}
+                    onClick={() => {
+                      setDetailDrawerVisible(false);
+                      handleCancel(selectedMovement);
+                    }}
+                  >
+                    Отменить
+                  </Button>
+                )}
+                
+                <Popconfirm
+                  title="Вы уверены, что хотите удалить это движение?"
+                  onConfirm={() => {
+                    setDetailDrawerVisible(false);
+                    handleDelete(selectedMovement.id);
+                  }}
+                  okText="Да"
+                  cancelText="Нет"
+                >
+                  <Button 
+                    danger 
+                    icon={<DeleteOutlined />}
+                    style={{ 
+                      width: '100%',
+                      height: '44px',
+                      fontSize: '16px'
+                    }}
+                    disabled={!canCancel(selectedMovement)}
+                  >
+                    Удалить
+                  </Button>
+                </Popconfirm>
+              </div>
+            </div>
+          )}
+        </Drawer>
+
+        <Modal
+          title={editingMovement ? 'Редактировать движение' : 'Создать движение'}
+          open={modalVisible}
+          onCancel={() => {
+            setModalVisible(false);
+            setMovementItems([]);
+            setEditingMovement(null);
+            setSelectedMovementType('');
+          }}
+          footer={null}
+          width={isMobile ? '100%' : 800}
+          style={isMobile ? { margin: 16, maxWidth: 'calc(100vw - 32px)' } : {}}
+        >
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSubmit}
+          >
+            <Form.Item
+              name="document_date"
+              label="Дата документа"
+              rules={[{ required: true, message: 'Выберите дату' }]}
+              initialValue={dayjs()}
+            >
+              <DatePicker
+                showTime
+                style={{ width: '100%' }}
+                placeholder="Выберите дату и время"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="movement_type"
+              label="Тип движения"
+              rules={[{ required: true, message: 'Выберите тип движения' }]}
+            >
+              <Select 
+                placeholder="Выберите тип движения"
+                onChange={handleMovementTypeChange}
+              >
+                <Option value="receipt">Поступление</Option>
+                <Option value="sale">Продажа</Option>
+                <Option value="transfer">Перемещение</Option>
+                <Option value="adjustment">Корректировка</Option>
+                <Option value="issue">Выдача</Option>
+                <Option value="load_machine">Загрузка автомата</Option>
+                <Option value="unload_machine">Выгрузка автомата</Option>
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="status_id"
+              label="Статус"
+              rules={[{ required: true, message: 'Выберите статус' }]}
+              initialValue={1}
+            >
+              <Select placeholder="Выберите статус">
+                <Option value={1}>Черновик</Option>
+                <Option value={2}>Утвержден</Option>
+              </Select>
+            </Form.Item>
+
+            {/* Поля отправления */}
+            {shouldShowFromWarehouse() && (
+              <Form.Item
+                name="from_warehouse_id"
+                label="Склад отправления"
+                extra={selectedMovementType === 'load_machine' ? 'Необязательно. Если не указан, создается операция закупки товара' : undefined}
+                rules={selectedMovementType === 'transfer' ? [{ required: true, message: 'Выберите склад отправления' }] : []}
+              >
+                <Select placeholder="Выберите склад отправления" allowClear onChange={handleFromWarehouseChange}>
+                  {warehouses.map(warehouse => (
+                    <Option key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
+
+            {shouldShowFromMachine() && (
+              <Form.Item
+                name="from_machine_id"
+                label="Автомат отправления"
+                rules={
+                  ['transfer', 'unload_machine'].includes(selectedMovementType) 
+                    ? [{ required: true, message: 'Выберите автомат отправления' }] 
+                    : []
+                }
+              >
+                <Select placeholder="Выберите автомат отправления" allowClear onChange={handleFromMachineChange}>
+                  {machines.map(machine => (
+                    <Option key={machine.id} value={machine.id}>
+                      {machine.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
+
+            {/* Поля назначения */}
+            {shouldShowToWarehouse() && (
+              <Form.Item
+                name="to_warehouse_id"
+                label="Склад назначения"
+                rules={
+                  selectedMovementType === 'transfer' 
+                    ? [{ required: true, message: 'Выберите склад назначения' }]
+                    : selectedMovementType === 'receipt'
+                    ? [{ 
+                        required: !form.getFieldValue('to_machine_id'), 
+                        message: 'Выберите склад назначения или автомат назначения' 
+                      }]
+                    : []
+                }
+              >
+                <Select placeholder="Выберите склад назначения" allowClear onChange={handleToWarehouseChange}>
+                  {warehouses.map(warehouse => (
+                    <Option key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
+
+            {shouldShowToMachine() && (
+              <Form.Item
+                name="to_machine_id"
+                label="Автомат назначения"
+                rules={
+                  ['transfer', 'load_machine'].includes(selectedMovementType) 
+                    ? [{ required: true, message: 'Выберите автомат назначения' }]
+                    : selectedMovementType === 'receipt'
+                    ? [{ 
+                        required: !form.getFieldValue('to_warehouse_id'), 
+                        message: 'Выберите автомат назначения или склад назначения' 
+                      }]
+                    : []
+                }
+              >
+                <Select placeholder="Выберите автомат назначения" allowClear onChange={handleToMachineChange}>
+                  {machines.map(machine => (
+                    <Option key={machine.id} value={machine.id}>
+                      {machine.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
+
+            {/* Контрагент */}
+            {shouldShowCounterparty() && (
+              <Form.Item
+                name="counterparty_id"
+                label="Контрагент"
+                extra={selectedMovementType === 'load_machine' ? 'Необязательно. Указывается только для закупки товара' : undefined}
+                rules={
+                  ['receipt', 'sale'].includes(selectedMovementType) 
+                    ? [{ required: true, message: 'Выберите контрагента' }] 
+                    : []
+                }
+              >
+                <Select placeholder="Выберите контрагента" allowClear>
+                  {counterparties.map(counterparty => (
+                    <Option key={counterparty.id} value={counterparty.id}>
+                      {counterparty.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            )}
+
+            <Form.Item
+              name="currency"
+              label="Валюта"
+              rules={[{ required: true, message: 'Выберите валюту' }]}
+              initialValue="RUB"
+            >
+              <Select placeholder="Выберите валюту">
+                <Option value="RUB">Рубль (RUB)</Option>
+                <Option value="USD">Доллар (USD)</Option>
+                <Option value="EUR">Евро (EUR)</Option>
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="description"
+              label="Описание"
+            >
+              <TextArea
+                rows={3}
+                placeholder="Введите описание движения"
+              />
+            </Form.Item>
+
+            {/* Секция позиций товаров */}
+            <Form.Item label="Позиции товаров">
+              <div style={{ marginBottom: 16 }}>
+                <Button 
+                  type="dashed" 
+                  onClick={addMovementItem}
+                  icon={<PlusOutlined />}
+                >
+                  Добавить товар
+                </Button>
+              </div>
+              
+              {movementItems.map((item, index) => (
+                <div key={item.id} style={{ 
+                  border: '1px solid #d9d9d9', 
+                  borderRadius: 6, 
+                  padding: 16, 
+                  marginBottom: 16,
+                  backgroundColor: '#fafafa'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <strong>Позиция {index + 1}</strong>
+                    <Button 
+                      type="text" 
+                      danger 
+                      icon={<DeleteOutlined />}
+                      onClick={() => removeMovementItem(index)}
+                    />
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>Товар *</label>
+                      <Select
+                        placeholder="Выберите товар"
+                        value={item.item_id}
+                        onChange={(value) => updateMovementItem(index, 'item_id', value)}
+                        style={{ width: '100%' }}
+                        showSearch
+                        filterOption={(input, option) => {
+                          if (!option?.children) return false;
+                          const searchText = input.toLowerCase();
+                          const optionText = option.children.toString().toLowerCase();
+                          return optionText.includes(searchText);
+                        }}
+                        optionFilterProp="children"
+                        dropdownStyle={{ maxHeight: 300 }}
+                        optionLabelProp="label"
+                      >
+                        {items.map(itemOption => (
+                          <Option 
+                            key={itemOption.id} 
+                            value={itemOption.id}
+                            label={`${itemOption.name} | ${itemOption.sku}`}
+                          >
+                            <div style={{ 
+                              whiteSpace: 'nowrap', 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis',
+                              maxWidth: '100%'
+                            }}>
+                              {itemOption.name} | {itemOption.sku}
+                            </div>
+                          </Option>
+                        ))}
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>Количество *</label>
+                      <InputNumber
+                        placeholder="Кол-во"
+                        value={item.quantity}
+                        onChange={(value) => updateMovementItem(index, 'quantity', value)}
+                        min={0.01}
+                        step={0.01}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>Цена *</label>
+                      <InputNumber
+                        placeholder="Цена"
+                        value={item.price}
+                        onChange={(value) => updateMovementItem(index, 'price', value)}
+                        min={0}
+                        step={0.01}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>Сумма</label>
+                      <Input
+                        value={item.amount ? item.amount : '0.00'}
+                        disabled
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div style={{ marginTop: 12 }}>
+                    <label style={{ display: 'block', marginBottom: 4, fontSize: 12 }}>Описание</label>
+                    <Input
+                      placeholder="Описание позиции"
+                      value={item.description}
+                      onChange={(e) => updateMovementItem(index, 'description', e.target.value)}
+                    />
+                  </div>
+                </div>
+              ))}
+              
+              {movementItems.length === 0 && (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: 24, 
+                  border: '1px dashed #d9d9d9', 
+                  borderRadius: 6,
+                  color: '#999'
+                }}>
+                  Нет добавленных товаров
+                </div>
+              )}
+            </Form.Item>
+
+            <Form.Item>
+              <Space size={isMobile ? 'small' : 'middle'}>
+                <Button type="primary" htmlType="submit" size={isMobile ? 'small' : 'middle'}>
+                  {editingMovement ? 'Обновить' : 'Создать'}
+                </Button>
+                <Button onClick={() => setModalVisible(false)} size={isMobile ? 'small' : 'middle'}>
+                  Отмена
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </Modal>
+      </Card>
+    </div>
+  );
+};
+
+export default InventoryMovements; 

@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: ant-admin--demo-minio
+    restart: unless-stopped
+    env_file:
+      - docker.env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./minio_data:/data
+      - /etc/localtime:/etc/localtime
+    networks:
+      - ant-admin-network
+    command: server /data --console-address ":9001"
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend_py
+      dockerfile: Dockerfile
+      args:
+       - APP_VERSION=1.0
+    container_name: ant-admin-demo-backend
+    restart: unless-stopped
+    env_file:
+      - docker.env
+    ports:
+      - "28000:8000"
+    volumes:
+      - ./backend_py/logs:/app/logs
+      - ./backend_py/uploads:/app/uploads
+      - /etc/localtime:/etc/localtime
+    depends_on:
+      - minio
+    networks:
+      - ant-admin-network
+    command: uvicorn src.app.__main__:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: user@email.ru
+      PGADMIN_DEFAULT_PASSWORD: password
+    ports:
+      - "5446:80" # You can change the host port if 8080 is in use
+    depends_on:
+      - db
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin # Mount the named volume to the pgAdmin data directory
+
+volumes:
+  minio_data:
+    driver: local
+  pgadmin_data:
+networks:
+  ant-admin-network:
+    driver: bridge

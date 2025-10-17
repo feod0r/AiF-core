@@ -1,0 +1,1158 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Card,
+  Table,
+  Button,
+  Modal,
+  Form,
+  Input,
+  Select,
+  Tag,
+  Space,
+  Tooltip,
+  message,
+  Descriptions,
+  DatePicker,
+  InputNumber,
+  Typography,
+  Alert,
+  Statistic,
+  Row,
+  Col,
+  Popconfirm,
+  Divider,
+  Checkbox,
+  List,
+  Drawer
+} from 'antd';
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  EyeOutlined,
+  CopyOutlined,
+  ReloadOutlined,
+  StopOutlined,
+  KeyOutlined,
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
+  ClockCircleOutlined
+} from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
+import { apiTokensApi } from '../services/api';
+import type { 
+  ApiToken, 
+  ApiTokenCreate, 
+  ApiTokenUpdate, 
+  ApiTokenCreateResponse, 
+  ApiTokenStats 
+} from '../types';
+
+const { Text, Title, Paragraph } = Typography;
+const { Option } = Select;
+const { TextArea } = Input;
+
+const ApiTokens: React.FC = () => {
+  // Состояние данных
+  const [tokens, setTokens] = useState<ApiToken[]>([]);
+  const [stats, setStats] = useState<ApiTokenStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [editingToken, setEditingToken] = useState<ApiToken | null>(null);
+  const [viewingToken, setViewingToken] = useState<ApiToken | null>(null);
+  const [newTokenResponse, setNewTokenResponse] = useState<ApiTokenCreateResponse | null>(null);
+  
+  // Состояние для форм и фильтров
+  const [form] = Form.useForm();
+  const [searchText, setSearchText] = useState('');
+  
+  // Состояние для выбора разрешений
+  const [availableScopes, setAvailableScopes] = useState<Array<{value: string, label: string}>>([]);
+  const [availablePermissions, setAvailablePermissions] = useState<string[]>([]);
+  const [permissionPresets, setPermissionPresets] = useState<Record<string, string[]>>({});
+  const [selectedPreset, setSelectedPreset] = useState<string>('');
+
+  // Мобильные состояния
+  const [isMobile, setIsMobile] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<ApiToken | null>(null);
+  const [drawerVisible, setDrawerVisible] = useState(false);
+
+  // Refs
+  const actionRef = useRef<any>(null);
+
+  // Загрузка данных
+  const loadTokens = async () => {
+    try {
+      setLoading(true);
+      const data = await apiTokensApi.list({
+        name_contains: searchText || undefined,
+      });
+      setTokens(data);
+    } catch (error: any) {
+      message.error('Ошибка загрузки токенов: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStats = async () => {
+    try {
+      const data = await apiTokensApi.getStats();
+      setStats(data);
+    } catch (error: any) {
+      message.error('Ошибка загрузки статистики: ' + error.message);
+    }
+  };
+
+  const loadFormData = async () => {
+    try {
+      const [scopesData, permissionsData, presetsData] = await Promise.all([
+        apiTokensApi.getScopes(),
+        apiTokensApi.getPermissions(),
+        apiTokensApi.getPresets()
+      ]);
+      
+      setAvailableScopes(scopesData.scopes);
+      setAvailablePermissions(permissionsData.permissions);
+      setPermissionPresets(presetsData);
+    } catch (error: any) {
+      message.error('Ошибка загрузки данных формы: ' + error.message);
+    }
+  };
+
+  // Определяем мобильное устройство
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    loadTokens();
+    loadStats();
+    loadFormData();
+  }, []);
+
+  useEffect(() => {
+    loadTokens();
+  }, [searchText]);
+
+  // Обработчики действий
+  const handleCreate = () => {
+    setEditingToken(null);
+    setNewTokenResponse(null);
+    form.resetFields();
+    form.setFieldsValue({
+      rate_limit: 1000,
+      permissions: [],
+      scopes: [],
+      ip_whitelist: []
+    });
+    setModalVisible(true);
+  };
+
+  const handleEdit = (token: ApiToken) => {
+    setEditingToken(token);
+    setNewTokenResponse(null);
+    form.setFieldsValue({
+      name: token.name,
+      description: token.description,
+      permissions: token.permissions,
+      scopes: token.scopes,
+      ip_whitelist: token.ip_whitelist,
+      rate_limit: token.rate_limit,
+      expires_at: token.expires_at ? dayjs(token.expires_at) : undefined
+    });
+    setModalVisible(true);
+  };
+
+  const handleView = (token: ApiToken) => {
+    setViewingToken(token);
+    setDetailModalVisible(true);
+  };
+
+  // Показать детали токена в drawer
+  const showTokenDetails = (token: ApiToken) => {
+    setSelectedToken(token);
+    setDrawerVisible(true);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      
+      // Подготавливаем данные
+      const tokenData = {
+        ...values,
+        expires_at: values.expires_at ? values.expires_at.toISOString() : undefined,
+        ip_whitelist: Array.isArray(values.ip_whitelist) ? values.ip_whitelist : 
+                     values.ip_whitelist ? values.ip_whitelist.split('\n').filter((ip: string) => ip.trim()) : []
+      };
+
+      if (editingToken) {
+        // Обновление
+        await apiTokensApi.update(editingToken.id, tokenData);
+        message.success('Токен успешно обновлен');
+        setNewTokenResponse(null);
+      } else {
+        // Создание
+        const response = await apiTokensApi.create(tokenData);
+        message.success('Токен успешно создан');
+        setNewTokenResponse(response);
+        // Не закрываем модал, чтобы показать токен
+        loadStats(); // Обновляем статистику
+        return;
+      }
+
+      setModalVisible(false);
+      loadTokens();
+      loadStats();
+    } catch (error: any) {
+      message.error('Ошибка: ' + error.message);
+    }
+  };
+
+  const handleDelete = async (tokenId: number) => {
+    try {
+      await apiTokensApi.delete(tokenId);
+      message.success('Токен успешно удален');
+      loadTokens();
+      loadStats();
+    } catch (error: any) {
+      message.error('Ошибка удаления: ' + error.message);
+    }
+  };
+
+  const handleRevoke = async (tokenId: number) => {
+    try {
+      await apiTokensApi.revoke(tokenId);
+      message.success('Токен успешно отозван');
+      loadTokens();
+      loadStats();
+    } catch (error: any) {
+      message.error('Ошибка отзыва: ' + error.message);
+    }
+  };
+
+  const handleRegenerate = async (tokenId: number) => {
+    try {
+      const response = await apiTokensApi.regenerate(tokenId);
+      setNewTokenResponse(response);
+      setModalVisible(true);
+      message.success('Токен успешно перегенерирован');
+      loadTokens();
+      loadStats();
+    } catch (error: any) {
+      message.error('Ошибка перегенерации: ' + error.message);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success('Скопировано в буфер обмена');
+    });
+  };
+
+  const handlePresetChange = (preset: string) => {
+    setSelectedPreset(preset);
+    if (preset && permissionPresets[preset]) {
+      form.setFieldsValue({
+        permissions: permissionPresets[preset]
+      });
+    }
+  };
+
+  // Колонки таблицы
+  const columns: ColumnsType<ApiToken> = [
+    {
+      title: 'Название',
+      dataIndex: 'name',
+      key: 'name',
+      width: 200,
+      render: (text, record) => (
+        <Space direction="vertical" size={0}>
+          <Text strong>{text}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {record.token_prefix}...
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Статус',
+      dataIndex: 'is_active',
+      key: 'status',
+      width: 100,
+      render: (is_active, record) => {
+        const isExpired = record.expires_at && dayjs(record.expires_at).isBefore(dayjs());
+        
+        if (!is_active) {
+          return <Tag color="red" icon={<StopOutlined />}>Отозван</Tag>;
+        }
+        if (isExpired) {
+          return <Tag color="orange" icon={<ClockCircleOutlined />}>Истек</Tag>;
+        }
+        return <Tag color="green" icon={<CheckCircleOutlined />}>Активен</Tag>;
+      },
+    },
+    {
+      title: 'Разрешения',
+      dataIndex: 'permissions',
+      key: 'permissions',
+      width: 200,
+      render: (permissions: string[]) => (
+        <Space wrap size={4}>
+          {permissions.slice(0, 3).map(perm => (
+            <Tag key={perm} style={{ fontSize: 11 }}>
+              {perm.split(':')[0]}
+            </Tag>
+          ))}
+          {permissions.length > 3 && (
+            <Text type="secondary">+{permissions.length - 3}</Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: 'Использований',
+      dataIndex: 'usage_count',
+      key: 'usage_count',
+      width: 100,
+      align: 'center',
+      render: (count) => <Text strong>{count}</Text>,
+    },
+    {
+      title: 'Последнее использование',
+      dataIndex: 'last_used_at',
+      key: 'last_used_at',
+      width: 150,
+      render: (date) => date ? dayjs(date).format('DD.MM.YYYY HH:mm') : 'Не использовался',
+    },
+    {
+      title: 'Истекает',
+      dataIndex: 'expires_at',
+      key: 'expires_at',
+      width: 120,
+      render: (date) => date ? dayjs(date).format('DD.MM.YYYY') : 'Бессрочно',
+    },
+    {
+      title: 'Действия',
+      key: 'actions',
+      width: 200,
+      render: (_, record) => (
+        <Space size="small">
+          <Tooltip title="Просмотр">
+            <Button 
+              type="text" 
+              icon={<EyeOutlined />} 
+              onClick={() => handleView(record)}
+            />
+          </Tooltip>
+          <Tooltip title="Редактировать">
+            <Button 
+              type="text" 
+              icon={<EditOutlined />} 
+              onClick={() => handleEdit(record)}
+            />
+          </Tooltip>
+          <Tooltip title="Перегенерировать">
+            <Button 
+              type="text" 
+              icon={<ReloadOutlined />} 
+              onClick={() => handleRegenerate(record.id)}
+            />
+          </Tooltip>
+          {record.is_active ? (
+            <Tooltip title="Отозвать">
+              <Popconfirm
+                title="Отозвать токен?"
+                description="Токен будет деактивирован и перестанет работать"
+                onConfirm={() => handleRevoke(record.id)}
+                okText="Да"
+                cancelText="Нет"
+              >
+                <Button type="text" icon={<StopOutlined />} danger />
+              </Popconfirm>
+            </Tooltip>
+          ) : null}
+          <Tooltip title="Удалить">
+            <Popconfirm
+              title="Удалить токен?"
+              description="Это действие нельзя отменить"
+              onConfirm={() => handleDelete(record.id)}
+              okText="Да"
+              cancelText="Нет"
+            >
+              <Button type="text" icon={<DeleteOutlined />} danger />
+            </Popconfirm>
+          </Tooltip>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div style={{ padding: isMobile ? 16 : 24 }}>
+      <Title level={isMobile ? 3 : 2}>
+        <KeyOutlined /> API Токены
+      </Title>
+      <Paragraph type="secondary" style={{ fontSize: isMobile ? '14px' : undefined }}>
+        Управление токенами для программного доступа к API
+      </Paragraph>
+
+      {/* Статистика */}
+      {stats && (
+        isMobile ? (
+          <Row gutter={8} style={{ marginBottom: 16 }}>
+            <Col span={12}>
+              <Card size="small">
+                <Statistic
+                  title="Всего"
+                  value={stats.total_tokens}
+                  prefix={<KeyOutlined />}
+                  valueStyle={{ fontSize: '16px' }}
+                />
+              </Card>
+            </Col>
+            <Col span={12}>
+              <Card size="small">
+                <Statistic
+                  title="Активных"
+                  value={stats.active_tokens}
+                  valueStyle={{ color: '#3f8600', fontSize: '16px' }}
+                  prefix={<CheckCircleOutlined />}
+                />
+              </Card>
+            </Col>
+          </Row>
+        ) : (
+          <Row gutter={16} style={{ marginBottom: 24 }}>
+            <Col span={6}>
+              <Card>
+                <Statistic
+                  title="Всего токенов"
+                  value={stats.total_tokens}
+                  prefix={<KeyOutlined />}
+                />
+              </Card>
+            </Col>
+            <Col span={6}>
+              <Card>
+                <Statistic
+                  title="Активных"
+                  value={stats.active_tokens}
+                  valueStyle={{ color: '#3f8600' }}
+                  prefix={<CheckCircleOutlined />}
+                />
+              </Card>
+            </Col>
+            <Col span={6}>
+              <Card>
+                <Statistic
+                  title="Истекших"
+                  value={stats.expired_tokens}
+                  valueStyle={{ color: '#cf1322' }}
+                  prefix={<ClockCircleOutlined />}
+                />
+              </Card>
+            </Col>
+            <Col span={6}>
+              <Card>
+                <Statistic
+                  title="Всего использований"
+                  value={stats.total_usage}
+                  prefix={<EyeOutlined />}
+                />
+              </Card>
+            </Col>
+          </Row>
+        )
+      )}
+
+      {/* Панель управления */}
+      <Card style={{ marginBottom: 16 }} size={isMobile ? 'small' : 'default'}>
+        {isMobile ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            <Input.Search
+              placeholder="Поиск токенов..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear
+              size="middle"
+            />
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />} 
+              onClick={handleCreate}
+              size="middle"
+              style={{ width: '100%' }}
+            >
+              Создать токен
+            </Button>
+          </Space>
+        ) : (
+          <Row justify="space-between" align="middle">
+            <Col>
+              <Space>
+                <Input.Search
+                  placeholder="Поиск токенов..."
+                  style={{ width: 300 }}
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  allowClear
+                />
+              </Space>
+            </Col>
+            <Col>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />} 
+                onClick={handleCreate}
+              >
+                Создать токен
+              </Button>
+            </Col>
+          </Row>
+        )}
+      </Card>
+
+      {/* Таблица токенов */}
+      {isMobile ? (
+        <Card size="small">
+          <List
+            dataSource={tokens}
+            loading={loading}
+            renderItem={(token) => (
+              <List.Item
+                onClick={() => showTokenDetails(token)}
+                style={{ cursor: 'pointer', padding: '12px 0' }}
+              >
+                <div style={{ width: '100%' }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 8, 
+                    marginBottom: 8,
+                    fontSize: '16px',
+                    fontWeight: 'bold'
+                  }}>
+                    <KeyOutlined />
+                    <span>{token.name}</span>
+                    {token.is_active ? (
+                      dayjs(token.expires_at).isBefore(dayjs()) ? (
+                        <Tag color="orange" icon={<ClockCircleOutlined />}>Истек</Tag>
+                      ) : (
+                        <Tag color="green" icon={<CheckCircleOutlined />}>Активен</Tag>
+                      )
+                    ) : (
+                      <Tag color="red" icon={<StopOutlined />}>Отозван</Tag>
+                    )}
+                  </div>
+                  
+                  <div style={{ fontSize: '14px', color: '#666', marginBottom: 8 }}>
+                    <div>Префикс: <Text code>{token.token_prefix}...</Text></div>
+                    <div>Описание: {token.description || 'Не указано'}</div>
+                    <div>Использований: {token.usage_count}</div>
+                    <div>Последнее использование: {token.last_used_at 
+                      ? dayjs(token.last_used_at).format('DD.MM.YYYY HH:mm')
+                      : 'Не использовался'
+                    }</div>
+                    <div>Истекает: {token.expires_at 
+                      ? dayjs(token.expires_at).format('DD.MM.YYYY')
+                      : 'Бессрочно'
+                    }</div>
+                    <div>Разрешения: 
+                      <Space wrap size={4} style={{ marginLeft: 4 }}>
+                        {token.permissions.slice(0, 2).map(perm => (
+                          <Tag key={perm} style={{ fontSize: 11 }}>
+                            {perm.split(':')[0]}
+                          </Tag>
+                        ))}
+                        {token.permissions.length > 2 && (
+                          <Text type="secondary">+{token.permissions.length - 2}</Text>
+                        )}
+                      </Space>
+                    </div>
+                  </div>
+                  
+                  <div style={{ 
+                    display: 'flex', 
+                    flexWrap: 'wrap',
+                    gap: 4, 
+                    justifyContent: 'flex-end',
+                    borderTop: '1px solid #f0f0f0',
+                    paddingTop: 8
+                  }}>
+                    <Button
+                      type="text"
+                      icon={<EyeOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleView(token);
+                      }}
+                      size="small"
+                      style={{ fontSize: '12px', padding: '4px 8px', minWidth: 'auto' }}
+                    >
+                      Просмотр
+                    </Button>
+                    <Button
+                      type="text"
+                      icon={<EditOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(token);
+                      }}
+                      size="small"
+                      style={{ fontSize: '12px', padding: '4px 8px', minWidth: 'auto' }}
+                    >
+                      Изменить
+                    </Button>
+                    <Button
+                      type="text"
+                      icon={<ReloadOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRegenerate(token.id);
+                      }}
+                      size="small"
+                      style={{ fontSize: '12px', padding: '4px 8px', minWidth: 'auto' }}
+                    >
+                      Перегенер.
+                    </Button>
+                    {token.is_active ? (
+                      <Popconfirm
+                        title="Отозвать токен?"
+                        description="Токен будет деактивирован и перестанет работать"
+                        onConfirm={(e) => {
+                          e?.stopPropagation();
+                          handleRevoke(token.id);
+                        }}
+                        okText="Да"
+                        cancelText="Нет"
+                      >
+                        <Button
+                          type="text"
+                          icon={<StopOutlined />}
+                          danger
+                          size="small"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: '12px', padding: '4px 8px', minWidth: 'auto' }}
+                        >
+                          Отозвать
+                        </Button>
+                      </Popconfirm>
+                    ) : null}
+                    <Popconfirm
+                      title="Удалить токен?"
+                      description="Это действие нельзя отменить"
+                      onConfirm={(e) => {
+                        e?.stopPropagation();
+                        handleDelete(token.id);
+                      }}
+                      okText="Да"
+                      cancelText="Нет"
+                    >
+                      <Button
+                        type="text"
+                        icon={<DeleteOutlined />}
+                        danger
+                        size="small"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: '12px', padding: '4px 8px', minWidth: 'auto' }}
+                      >
+                        Удалить
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                </div>
+              </List.Item>
+            )}
+          />
+        </Card>
+      ) : (
+        <Card>
+          <Table
+            columns={columns}
+            dataSource={tokens}
+            rowKey="id"
+            loading={loading}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `Всего ${total} токенов`,
+            }}
+          />
+        </Card>
+      )}
+
+      {/* Модал создания/редактирования */}
+      <Modal
+        title={editingToken ? 'Редактировать токен' : 'Создать токен'}
+        open={modalVisible}
+        onCancel={() => {
+          if (!newTokenResponse) {
+            setModalVisible(false);
+          }
+        }}
+        footer={newTokenResponse ? [
+          <Button key="close" onClick={() => {
+            setModalVisible(false);
+            setNewTokenResponse(null);
+            loadTokens();
+          }} size={isMobile ? "middle" : undefined}>
+            Закрыть
+          </Button>
+        ] : [
+          <Button key="cancel" onClick={() => setModalVisible(false)} size={isMobile ? "middle" : undefined}>
+            Отмена
+          </Button>,
+          <Button key="submit" type="primary" onClick={handleSubmit} size={isMobile ? "middle" : undefined}>
+            {editingToken ? 'Обновить' : 'Создать'}
+          </Button>
+        ]}
+        width={isMobile ? '100%' : 800}
+        style={isMobile ? { margin: 16 } : {}}
+        destroyOnClose
+      >
+        {newTokenResponse ? (
+          <div>
+            <Alert
+              message="Токен успешно создан!"
+              description="Сохраните токен в безопасном месте. Он больше не будет показан."
+              type="success"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+            <Card>
+              <Descriptions title="Информация о токене" bordered column={1}>
+                <Descriptions.Item label="Название">
+                  {newTokenResponse.token_info.name}
+                </Descriptions.Item>
+                <Descriptions.Item label="Токен">
+                  <Space>
+                    <Input.TextArea
+                      value={newTokenResponse.token}
+                      rows={3}
+                      readOnly
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                    <Button
+                      icon={<CopyOutlined />}
+                      onClick={() => copyToClipboard(newTokenResponse.token)}
+                    >
+                      Копировать
+                    </Button>
+                  </Space>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          </div>
+        ) : (
+          <Form form={form} layout="vertical">
+            <Form.Item
+              name="name"
+              label="Название токена"
+              rules={[
+                { required: true, message: 'Введите название токена' },
+                { min: 3, message: 'Минимум 3 символа' }
+              ]}
+            >
+              <Input placeholder="Например: API для мобильного приложения" size={isMobile ? "middle" : undefined} />
+            </Form.Item>
+
+            <Form.Item name="description" label="Описание">
+              <TextArea 
+                rows={isMobile ? 3 : 2} 
+                placeholder="Опишите для чего будет использоваться токен" 
+              />
+            </Form.Item>
+
+            <Form.Item label="Предустановленные разрешения">
+              <Select
+                placeholder="Выберите готовый набор разрешений"
+                value={selectedPreset}
+                onChange={handlePresetChange}
+                allowClear
+                style={{ width: '100%' }}
+                size={isMobile ? "middle" : undefined}
+              >
+                {Object.keys(permissionPresets).map(preset => (
+                  <Option key={preset} value={preset}>
+                    {preset.charAt(0).toUpperCase() + preset.slice(1).replace('_', ' ')}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="permissions"
+              label="Разрешения"
+              rules={[{ required: true, message: 'Выберите хотя бы одно разрешение' }]}
+            >
+              <Select
+                mode="multiple"
+                placeholder="Выберите разрешения"
+                style={{ width: '100%' }}
+                showSearch
+                size={isMobile ? "middle" : undefined}
+                filterOption={(input, option) =>
+                  option?.children?.toString().toLowerCase().includes(input.toLowerCase()) ?? false
+                }
+              >
+                {availablePermissions.map(permission => (
+                  <Option key={permission} value={permission}>
+                    {permission}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            <Form.Item name="scopes" label="Области доступа">
+              <Select
+                mode="multiple"
+                placeholder="Оставьте пустым для доступа ко всем областям"
+                style={{ width: '100%' }}
+                size={isMobile ? "middle" : undefined}
+              >
+                {availableScopes.map(scope => (
+                  <Option key={scope.value} value={scope.value}>
+                    {scope.label}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            {isMobile ? (
+              <>
+                <Form.Item
+                  name="rate_limit"
+                  label="Лимит запросов в час"
+                  initialValue={1000}
+                >
+                  <InputNumber
+                    min={1}
+                    max={10000}
+                    style={{ width: '100%' }}
+                    placeholder="1000"
+                    size="middle"
+                  />
+                </Form.Item>
+                
+                <Form.Item name="expires_at" label="Дата истечения">
+                  <DatePicker
+                    style={{ width: '100%' }}
+                    placeholder="Оставьте пустым для бессрочного токена"
+                    showTime
+                    format="DD.MM.YYYY HH:mm"
+                    size="middle"
+                  />
+                </Form.Item>
+              </>
+            ) : (
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    name="rate_limit"
+                    label="Лимит запросов в час"
+                    initialValue={1000}
+                  >
+                    <InputNumber
+                      min={1}
+                      max={10000}
+                      style={{ width: '100%' }}
+                      placeholder="1000"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="expires_at" label="Дата истечения">
+                    <DatePicker
+                      style={{ width: '100%' }}
+                      placeholder="Оставьте пустым для бессрочного токена"
+                      showTime
+                      format="DD.MM.YYYY HH:mm"
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+            )}
+
+            <Form.Item name="ip_whitelist" label="Белый список IP">
+              <TextArea
+                rows={isMobile ? 4 : 3}
+                placeholder="Введите IP адреса, по одному на строку&#10;Оставьте пустым для разрешения всех IP"
+              />
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
+
+      {/* Модал просмотра деталей */}
+      <Modal
+        title="Детали токена"
+        open={detailModalVisible}
+        onCancel={() => setDetailModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setDetailModalVisible(false)} size={isMobile ? "middle" : undefined}>
+            Закрыть
+          </Button>
+        ]}
+        width={isMobile ? '100%' : 700}
+        style={isMobile ? { margin: 16 } : {}}
+      >
+        {viewingToken && (
+          <Descriptions bordered column={2}>
+            <Descriptions.Item label="Название" span={2}>
+              {viewingToken.name}
+            </Descriptions.Item>
+            <Descriptions.Item label="Описание" span={2}>
+              {viewingToken.description || 'Не указано'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Префикс токена">
+              <Text code>{viewingToken.token_prefix}...</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="Статус">
+              {viewingToken.is_active ? (
+                <Tag color="green">Активен</Tag>
+              ) : (
+                <Tag color="red">Отозван</Tag>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="Создан">
+              {dayjs(viewingToken.created_at).format('DD.MM.YYYY HH:mm')}
+            </Descriptions.Item>
+            <Descriptions.Item label="Обновлен">
+              {dayjs(viewingToken.updated_at).format('DD.MM.YYYY HH:mm')}
+            </Descriptions.Item>
+            <Descriptions.Item label="Использований">
+              {viewingToken.usage_count}
+            </Descriptions.Item>
+            <Descriptions.Item label="Последнее использование">
+              {viewingToken.last_used_at 
+                ? dayjs(viewingToken.last_used_at).format('DD.MM.YYYY HH:mm')
+                : 'Не использовался'
+              }
+            </Descriptions.Item>
+            <Descriptions.Item label="Истекает">
+              {viewingToken.expires_at 
+                ? dayjs(viewingToken.expires_at).format('DD.MM.YYYY HH:mm')
+                : 'Бессрочно'
+              }
+            </Descriptions.Item>
+            <Descriptions.Item label="Лимит запросов">
+              {viewingToken.rate_limit || 'Не ограничено'} в час
+            </Descriptions.Item>
+            <Descriptions.Item label="Создатель">
+              {viewingToken.creator_username || 'Неизвестно'}
+            </Descriptions.Item>
+            <Descriptions.Item label="ID">
+              {viewingToken.id}
+            </Descriptions.Item>
+            <Descriptions.Item label="Разрешения" span={2}>
+              <Space wrap>
+                {viewingToken.permissions.map(perm => (
+                  <Tag key={perm}>{perm}</Tag>
+                ))}
+              </Space>
+            </Descriptions.Item>
+            {viewingToken.scopes && viewingToken.scopes.length > 0 && (
+              <Descriptions.Item label="Области доступа" span={2}>
+                <Space wrap>
+                  {viewingToken.scopes.map(scope => (
+                    <Tag key={scope} color="blue">{scope}</Tag>
+                  ))}
+                </Space>
+              </Descriptions.Item>
+            )}
+            {viewingToken.ip_whitelist && viewingToken.ip_whitelist.length > 0 && (
+              <Descriptions.Item label="Белый список IP" span={2}>
+                <Space wrap>
+                  {viewingToken.ip_whitelist.map(ip => (
+                    <Tag key={ip} color="purple">{ip}</Tag>
+                  ))}
+                </Space>
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+        )}
+      </Modal>
+
+      {/* Drawer для детального просмотра токена */}
+      <Drawer
+        title="Детали токена"
+        placement="right"
+        onClose={() => setDrawerVisible(false)}
+        open={drawerVisible}
+        width={isMobile ? '100%' : 400}
+      >
+        {selectedToken && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ marginBottom: 8 }}>Основная информация</h3>
+              <div style={{ fontSize: '14px', lineHeight: '1.6' }}>
+                <div><strong>ID:</strong> {selectedToken.id}</div>
+                <div><strong>Название:</strong> {selectedToken.name}</div>
+                <div><strong>Описание:</strong> {selectedToken.description || 'Не указано'}</div>
+                <div><strong>Префикс токена:</strong> <Text code>{selectedToken.token_prefix}...</Text></div>
+                <div><strong>Статус:</strong> 
+                  {selectedToken.is_active ? (
+                    dayjs(selectedToken.expires_at).isBefore(dayjs()) ? (
+                      <Tag color="orange" icon={<ClockCircleOutlined />} style={{ marginLeft: 8 }}>Истек</Tag>
+                    ) : (
+                      <Tag color="green" icon={<CheckCircleOutlined />} style={{ marginLeft: 8 }}>Активен</Tag>
+                    )
+                  ) : (
+                    <Tag color="red" icon={<StopOutlined />} style={{ marginLeft: 8 }}>Отозван</Tag>
+                  )}
+                </div>
+                <div><strong>Создан:</strong> {dayjs(selectedToken.created_at).format('DD.MM.YYYY HH:mm')}</div>
+                <div><strong>Обновлен:</strong> {dayjs(selectedToken.updated_at).format('DD.MM.YYYY HH:mm')}</div>
+                <div><strong>Использований:</strong> {selectedToken.usage_count}</div>
+                <div><strong>Последнее использование:</strong> {selectedToken.last_used_at 
+                  ? dayjs(selectedToken.last_used_at).format('DD.MM.YYYY HH:mm')
+                  : 'Не использовался'
+                }</div>
+                <div><strong>Истекает:</strong> {selectedToken.expires_at 
+                  ? dayjs(selectedToken.expires_at).format('DD.MM.YYYY HH:mm')
+                  : 'Бессрочно'
+                }</div>
+                <div><strong>Лимит запросов:</strong> {selectedToken.rate_limit || 'Не ограничено'} в час</div>
+                <div><strong>Создатель:</strong> {selectedToken.creator_username || 'Неизвестно'}</div>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: 16 }}>
+              <h3 style={{ marginBottom: 8 }}>Разрешения</h3>
+              <Space wrap>
+                {selectedToken.permissions.map(perm => (
+                  <Tag key={perm}>{perm}</Tag>
+                ))}
+              </Space>
+            </div>
+            
+            {selectedToken.scopes && selectedToken.scopes.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <h3 style={{ marginBottom: 8 }}>Области доступа</h3>
+                <Space wrap>
+                  {selectedToken.scopes.map(scope => (
+                    <Tag key={scope} color="blue">{scope}</Tag>
+                  ))}
+                </Space>
+              </div>
+            )}
+            
+            {selectedToken.ip_whitelist && selectedToken.ip_whitelist.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <h3 style={{ marginBottom: 8 }}>Белый список IP</h3>
+                <Space wrap>
+                  {selectedToken.ip_whitelist.map(ip => (
+                    <Tag key={ip} color="purple">{ip}</Tag>
+                  ))}
+                </Space>
+              </div>
+            )}
+            
+            <div style={{ 
+              position: 'fixed', 
+              bottom: 0, 
+              left: 0, 
+              right: 0, 
+              padding: '16px',
+              background: 'white',
+              borderTop: '1px solid #f0f0f0',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 4,
+              justifyContent: 'space-between'
+            }}>
+              <Button
+                icon={<EyeOutlined />}
+                onClick={() => {
+                  setDrawerVisible(false);
+                  handleView(selectedToken);
+                }}
+                size="middle"
+                style={{ flex: 1, minWidth: '80px', fontSize: '12px' }}
+              >
+                Просмотр
+              </Button>
+              <Button
+                type="primary"
+                icon={<EditOutlined />}
+                onClick={() => {
+                  setDrawerVisible(false);
+                  handleEdit(selectedToken);
+                }}
+                size="middle"
+                style={{ flex: 1, minWidth: '80px', fontSize: '12px' }}
+              >
+                Изменить
+              </Button>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={() => {
+                  setDrawerVisible(false);
+                  handleRegenerate(selectedToken.id);
+                }}
+                size="middle"
+                style={{ flex: 1, minWidth: '80px', fontSize: '12px' }}
+              >
+                Перегенер.
+              </Button>
+              {selectedToken.is_active ? (
+                <Popconfirm
+                  title="Отозвать токен?"
+                  description="Токен будет деактивирован и перестанет работать"
+                  onConfirm={() => {
+                    setDrawerVisible(false);
+                    handleRevoke(selectedToken.id);
+                  }}
+                  okText="Да"
+                  cancelText="Нет"
+                >
+                  <Button
+                    icon={<StopOutlined />}
+                    danger
+                    size="middle"
+                    style={{ flex: 1, minWidth: '80px', fontSize: '12px' }}
+                  >
+                    Отозвать
+                  </Button>
+                </Popconfirm>
+              ) : (
+                <Popconfirm
+                  title="Удалить токен?"
+                  description="Это действие нельзя отменить"
+                  onConfirm={() => {
+                    setDrawerVisible(false);
+                    handleDelete(selectedToken.id);
+                  }}
+                  okText="Да"
+                  cancelText="Нет"
+                >
+                  <Button
+                    icon={<DeleteOutlined />}
+                    danger
+                    size="middle"
+                    style={{ flex: 1, minWidth: '80px', fontSize: '12px' }}
+                  >
+                    Удалить
+                  </Button>
+                </Popconfirm>
+              )}
+            </div>
+          </div>
+        )}
+      </Drawer>
+    </div>
+  );
+};
+
+export default ApiTokens;

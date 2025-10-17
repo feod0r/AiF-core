@@ -1,0 +1,324 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Custom styles for admin panel */
+.ant-layout-sider {
+  box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
+}
+
+.ant-layout-header {
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+}
+
+.ant-card {
+  box-shadow: 0 1px 2px -2px rgba(0, 0, 0, 0.16), 0 3px 6px 0 rgba(0, 0, 0, 0.12), 0 5px 12px 4px rgba(0, 0, 0, 0.09);
+}
+
+.ant-table-thead > tr > th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.ant-pro-table-toolbar {
+  padding: 16px 0;
+}
+
+.ant-pro-table-search {
+  margin-bottom: 16px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ant-layout-sider {
+    position: fixed;
+    height: 100vh;
+    z-index: 999;
+  }
+  
+  .ant-layout-content {
+    margin-left: 0 !important;
+  }
+}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  /* Mobile table adjustments */
+  .ant-table {
+    font-size: 12px;
+  }
+  
+  .ant-table-thead > tr > th {
+    padding: 8px 4px;
+    font-size: 11px;
+  }
+  
+  .ant-table-tbody > tr > td {
+    padding: 6px 4px;
+    font-size: 12px;
+  }
+  
+  /* Mobile form adjustments */
+  .ant-form-item {
+    margin-bottom: 12px;
+  }
+  
+  .ant-form-item-label {
+    padding-bottom: 4px;
+  }
+  
+  .ant-form-item-label > label {
+    font-size: 14px;
+  }
+  
+  /* Mobile card adjustments */
+  .ant-card {
+    margin-bottom: 12px;
+  }
+  
+  .ant-card-head {
+    padding: 0 12px;
+  }
+  
+  .ant-card-body {
+    padding: 12px;
+  }
+  
+  /* Mobile button adjustments */
+  .ant-btn {
+    height: 36px;
+    font-size: 14px;
+  }
+  
+  /* Mobile input adjustments */
+  .ant-input,
+  .ant-select-selector,
+  .ant-picker {
+    height: 36px;
+    font-size: 14px;
+  }
+  
+  /* Mobile modal adjustments */
+  .ant-modal {
+    margin: 16px;
+    max-width: calc(100vw - 32px);
+  }
+  
+  .ant-modal-content {
+    border-radius: 8px;
+  }
+  
+  .ant-modal-header {
+    padding: 16px;
+  }
+  
+  .ant-modal-body {
+    padding: 16px;
+  }
+  
+  /* Mobile drawer adjustments */
+  .ant-drawer-content-wrapper {
+    width: 280px !important;
+  }
+  
+  /* Mobile pagination adjustments */
+  .ant-pagination {
+    font-size: 12px;
+  }
+  
+  .ant-pagination-item {
+    min-width: 28px;
+    height: 28px;
+    line-height: 26px;
+  }
+  
+  /* Mobile search adjustments */
+  .ant-pro-table-search {
+    padding: 12px;
+  }
+  
+  .ant-pro-table-toolbar {
+    padding: 12px;
+  }
+  
+  /* Mobile chart adjustments */
+  .recharts-wrapper {
+    font-size: 10px;
+  }
+  
+  /* Mobile navigation adjustments */
+  .ant-menu-item {
+    height: 44px;
+    line-height: 44px;
+  }
+  
+  .ant-menu-submenu-title {
+    height: 44px;
+    line-height: 44px;
+  }
+  
+  /* Mobile header adjustments */
+  .ant-layout-header {
+    padding: 0 12px;
+    height: 56px;
+    line-height: 56px;
+  }
+  
+  /* Mobile content adjustments */
+  .ant-layout-content {
+    padding: 12px !important;
+  }
+  
+  /* Mobile statistics adjustments */
+  .ant-statistic-title {
+    font-size: 12px;
+  }
+  
+  .ant-statistic-content {
+    font-size: 18px;
+  }
+  
+  /* Mobile tabs adjustments */
+  .ant-tabs-tab {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  
+  /* Mobile dropdown adjustments */
+  .ant-dropdown-menu {
+    font-size: 14px;
+  }
+  
+  .ant-dropdown-menu-item {
+    padding: 8px 12px;
+  }
+}
+
+/* Touch-friendly interactions */
+@media (max-width: 768px) {
+  .ant-btn,
+  .ant-menu-item,
+  .ant-menu-submenu-title,
+  .ant-table-row,
+  .ant-dropdown-menu-item {
+    min-height: 44px;
+  }
+  
+  .ant-input,
+  .ant-select-selector,
+  .ant-picker {
+    min-height: 44px;
+  }
+}
+
+/* Landscape orientation adjustments */
+@media (max-width: 768px) and (orientation: landscape) {
+  .ant-layout-header {
+    height: 48px;
+    line-height: 48px;
+  }
+  
+  .ant-layout-content {
+    padding: 8px !important;
+  }
+}
+
+/* Leaflet map styles */
+.leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 400px !important;
+}
+
+.leaflet-popup-content {
+  margin: 8px;
+}
+
+.leaflet-popup-content h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.leaflet-popup-content p {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.leaflet-popup-content .ant-tag {
+  margin-top: 8px;
+}
+
+.leaflet-popup-content .ant-btn {
+  margin-top: 8px;
+}
+
+.pivot-table-compact .ant-table {
+  font-size: 12px;
+}
+.pivot-table-compact .ant-table-thead > tr > th {
+  padding: 4px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pivot-table-compact .ant-table-tbody > tr > td {
+  padding: 4px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pivot-col-ellipsis {
+  max-width: 100px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

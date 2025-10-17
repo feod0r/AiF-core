@@ -1,0 +1,319 @@
+/* Дополнительные стили для темной темы */
+
+/* Светлая тема */
+.light-theme {
+  background-color: #f5f5f5;
+}
+
+.light-theme .ant-layout {
+  background-color: #f5f5f5;
+}
+
+.light-theme .ant-layout-header {
+  background-color: #001529;
+  color: #ffffff;
+}
+
+.light-theme .ant-layout-sider {
+  background-color: #001529;
+}
+
+.light-theme .ant-menu {
+  background-color: #001529;
+  color: #ffffff;
+}
+
+/* Темная тема */
+.dark-theme {
+  background-color: #000000;
+}
+
+.dark-theme .ant-layout {
+  background-color: #000000;
+}
+
+.dark-theme .ant-layout-header {
+  background-color: #001529;
+  color: #ffffff;
+  border-bottom: 1px solid #434343;
+}
+
+.dark-theme .ant-layout-sider {
+  background-color: #001529;
+}
+
+.dark-theme .ant-layout-content {
+  background-color: #141414;
+}
+
+.dark-theme .ant-menu {
+  background-color: #001529;
+  color: #ffffff;
+}
+
+.dark-theme .ant-menu-item {
+  color: #ffffff !important;
+}
+
+.dark-theme .ant-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark-theme .ant-menu-item-selected {
+  background-color: #1890ff !important;
+  color: #ffffff !important;
+}
+
+/* Кастомизация карточек в темной теме */
+.dark-theme .ant-card {
+  background-color: #1f1f1f;
+  border-color: #434343;
+}
+
+.dark-theme .ant-card-head {
+  background-color: #1f1f1f;
+  border-bottom-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-card-body {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+
+/* Кастомизация таблиц в темной теме */
+.dark-theme .ant-table {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+
+.dark-theme .ant-table-thead > tr > th {
+  background-color: #262626;
+  border-bottom-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-table-tbody > tr > td {
+  border-bottom-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-table-tbody > tr:hover > td {
+  background-color: #262626;
+}
+
+.dark-theme .ant-table-row:nth-child(even) {
+  background-color: #1a1a1a;
+}
+
+/* Кастомизация форм в темной теме */
+.dark-theme .ant-input {
+  background-color: #262626;
+  border-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-input:hover {
+  border-color: #1890ff;
+}
+
+.dark-theme .ant-input:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.dark-theme .ant-select-selector {
+  background-color: #262626 !important;
+  border-color: #434343 !important;
+  color: #ffffff !important;
+}
+
+.dark-theme .ant-select-selection-item {
+  color: #ffffff !important;
+}
+
+.dark-theme .ant-select-arrow {
+  color: #ffffff;
+}
+
+/* Кастомизация модальных окон в темной теме */
+.dark-theme .ant-modal-content {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+
+.dark-theme .ant-modal-header {
+  background-color: #1f1f1f;
+  border-bottom-color: #434343;
+}
+
+.dark-theme .ant-modal-title {
+  color: #ffffff;
+}
+
+.dark-theme .ant-modal-close {
+  color: #ffffff;
+}
+
+.dark-theme .ant-modal-footer {
+  background-color: #1f1f1f;
+  border-top-color: #434343;
+}
+
+/* Кастомизация кнопок в темной теме */
+.dark-theme .ant-btn-default {
+  background-color: #262626;
+  border-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-btn-default:hover {
+  background-color: #404040;
+  border-color: #1890ff;
+  color: #ffffff;
+}
+
+/* Кастомизация тегов в темной теме */
+.dark-theme .ant-tag {
+  background-color: #262626;
+  border-color: #434343;
+  color: #ffffff;
+}
+
+/* Кастомизация переключателей в темной теме */
+.dark-theme .ant-switch {
+  background-color: #434343;
+}
+
+.dark-theme .ant-switch-checked {
+  background-color: #1890ff;
+}
+
+/* Кастомизация уведомлений в темной теме */
+.dark-theme .ant-notification {
+  background-color: #1f1f1f;
+  color: #ffffff;
+  border: 1px solid #434343;
+}
+
+.dark-theme .ant-message {
+  color: #ffffff;
+}
+
+/* Кастомизация Drawer в темной теме */
+.dark-theme .ant-drawer-content {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+
+.dark-theme .ant-drawer-header {
+  background-color: #1f1f1f;
+  border-bottom-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-drawer-title {
+  color: #ffffff;
+}
+
+.dark-theme .ant-drawer-close {
+  color: #ffffff;
+}
+
+/* Кастомизация Tooltip в темной теме */
+.dark-theme .ant-tooltip-inner {
+  background-color: #262626;
+  color: #ffffff;
+}
+
+.dark-theme .ant-tooltip-arrow::before {
+  background-color: #262626;
+}
+
+/* Кастомизация DatePicker в темной теме */
+.dark-theme .ant-picker {
+  background-color: #262626;
+  border-color: #434343;
+  color: #ffffff;
+}
+
+.dark-theme .ant-picker:hover {
+  border-color: #1890ff;
+}
+
+.dark-theme .ant-picker-input > input {
+  color: #ffffff;
+}
+
+/* Скроллбары в темной теме */
+.dark-theme::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark-theme::-webkit-scrollbar-track {
+  background-color: #1f1f1f;
+}
+
+.dark-theme::-webkit-scrollbar-thumb {
+  background-color: #434343;
+  border-radius: 4px;
+}
+
+.dark-theme::-webkit-scrollbar-thumb:hover {
+  background-color: #666666;
+}
+
+/* Анимации для переключения темы */
+* {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Фиксы для специфичных компонентов */
+.dark-theme .ant-typography {
+  color: #ffffff !important;
+}
+
+.dark-theme .ant-typography h1,
+.dark-theme .ant-typography h2,
+.dark-theme .ant-typography h3,
+.dark-theme .ant-typography h4,
+.dark-theme .ant-typography h5,
+.dark-theme .ant-typography h6 {
+  color: #ffffff !important;
+}
+
+/* Кастомизация для Statistics */
+.dark-theme .ant-statistic {
+  color: #ffffff;
+}
+
+.dark-theme .ant-statistic-title {
+  color: #a6a6a6;
+}
+
+.dark-theme .ant-statistic-content {
+  color: #ffffff;
+}
+
+/* Кастомизация для Divider */
+.dark-theme .ant-divider {
+  border-color: #434343;
+}
+
+/* Кастомизация для Popover */
+.dark-theme .ant-popover-inner {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+
+.dark-theme .ant-popover-title {
+  color: #ffffff;
+  border-bottom-color: #434343;
+}
+
+.dark-theme .ant-popover-inner-content {
+  color: #ffffff;
+}
+
+
